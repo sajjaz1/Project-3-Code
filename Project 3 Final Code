@@ -1,0 +1,565 @@
+ip_address = 'localhost' # Enter your IP Address here
+project_identifier = 'P3A' # Enter the project identifier i.e. P2A or P2B
+
+# SERVO TABLE CONFIGURATION
+short_tower_angle = 315 # enter the value in degrees for the identification tower 
+tall_tower_angle = 90 # enter the value in degrees for the classification tower
+drop_tube_angle = 180 # enter the value in degrees for the drop tube. clockwise rotation from zero degrees
+
+# BIN CONFIGURATION
+# Configuration for the colors for the bins and the lines leading to those bins.
+# Note: The line leading up to the bin will be the same color as the bin 
+
+bin1_offset = 0.3 # offset in meters
+bin1_color = [1,0,0] # e.g. [1,0,0] for red
+bin1_metallic = False
+
+bin2_offset = 0.3
+bin2_color = [0,1,0]
+bin2_metallic = False
+
+bin3_offset = 0.3
+bin3_color = [0,0,1]
+bin3_metallic = False
+
+bin4_offset = 0.3
+bin4_color = [1,0,1]
+bin4_metallic = False
+#--------------------------------------------------------------------------------
+import sys
+sys.path.append('../')
+from Common.simulation_project_library import *
+
+hardware = False
+if project_identifier == 'P3B':
+    table_configuration = [short_tower_angle,tall_tower_angle,drop_tube_angle]
+    configuration_information = [table_configuration, None] # Configuring just the table
+    QLabs = configure_environment(project_identifier, ip_address, hardware,configuration_information).QLabs
+    table = servo_table(ip_address,QLabs,table_configuration,hardware)
+    arm = qarm(project_identifier,ip_address,QLabs,hardware)
+else:
+    table_configuration = [short_tower_angle,tall_tower_angle,drop_tube_angle]
+    bin_configuration = [[bin1_offset,bin2_offset,bin3_offset,bin4_offset],[bin1_color,bin2_color,bin3_color,bin4_color],[bin1_metallic,bin2_metallic, bin3_metallic,bin4_metallic]]
+    configuration_information = [table_configuration, bin_configuration]
+    QLabs = configure_environment(project_identifier, ip_address, hardware,configuration_information).QLabs
+    table = servo_table(ip_address,QLabs,table_configuration,hardware)
+    arm = qarm(project_identifier,ip_address,QLabs,hardware)
+    bot = qbot(0.1,ip_address,QLabs,project_identifier,hardware)
+#--------------------------------------------------------------------------------
+# STUDENT CODE BEGINS
+#---------------------------------------------------------------------------------
+import math
+
+
+
+#angle(): determines the angle of the direction of the q-bot with respect to the y and x axis
+#inputs: no inputs
+#outputs: angle, float representing the angle
+#NOTE: Not suited for taking angles with respect to objects, only with the axis
+#Additionally unsuitable for 45 degree angles
+def angle():
+
+    #initial position
+    xi, yi, zi = bot.position()
+    print(bot.position())
+
+
+    bot.set_wheel_speed([0.025,0.025])
+    time.sleep(1)
+    bot.stop()
+
+
+    time.sleep(1)
+
+
+    #second position
+    xs, ys, zs = bot.position()
+    print(bot.position())
+    time.sleep(1)
+
+
+    #resets to initial position
+    bot.set_wheel_speed([-0.025,-0.025])
+    time.sleep(1)
+    bot.stop()
+
+
+    print(bot.position())
+    time.sleep(1)
+
+
+    #takes components
+    x = xs - xi
+    print(x)
+
+    y = ys - yi
+    print(y)
+
+    z = zs - zi
+    print(z)
+
+
+    #realigns to y axis
+    #note, because angles in math are taken from x angle, must add a negative for respect to y
+    if abs(y) > abs(x):
+        o = -1*x
+        a = y
+
+
+    #potential flaw case, will always take to x axis if both are even(45 degrees)
+    elif abs(y) == abs(x):
+        print("prank'd buddy")
+
+        o = y
+        a = x
+
+
+    #realigns to x axis
+    else:
+        o = y
+        a = x
+
+
+    #math.atan() outputs in radians, must convert to degrees
+    angle = math.degrees(math.atan(o/a))
+
+
+    print(angle)
+
+
+    #End of Function
+    return angle
+                
+
+    
+
+
+
+#line: reads whether the bot is on or off the line, and sets wheel speed
+#Inputs: No Inputs
+#Outputs: No outputs
+#Note: Meant to be called upon in a loop
+def line():
+
+
+    #to the left of the line
+    if (bot.line_following_sensors() == [0,1]):
+        #sets to turn to the right
+        bot.set_wheel_speed([0.105,0.06])
+
+
+    #to the right of the line
+    elif (bot.line_following_sensors() == [1,0]):
+        #sets to turn to the left 
+        bot.set_wheel_speed([0.06,0.105])
+
+
+    #on the line
+    elif (bot.line_following_sensors() == [1,1]):
+        #sets to continue forward
+        bot.set_wheel_speed([0.06,0.06])
+
+
+    #off the line
+    else:
+        #Q-bot will also automatically stop all functions.
+        print("Off the line!")
+
+    #End of Function
+    return
+
+
+
+
+
+#Dispenses a random container and then returns it properties
+#input: No Inputs
+#output: Container information in form of a 3 item list containing mass, material, and Bin destination
+def dispense_container(): # Dispenses a random container 
+    
+    container_list=[1,2,3,4,5,6]
+    # shuffles the container list and assigns the first container in the list to a variable
+    for i in container_list:
+        random.shuffle(container_list)
+        container = container_list[i]
+        break
+    # dispenses the container which is assigned to the variable and gives its properties
+    container_properties=table.dispense_container(container, True)
+    print(container)
+    print(container_properties)
+    return container_properties
+
+
+   
+
+
+#Moves the Q Arm to deposit containers in the hopper.
+#Also dispenses the container and determines it mass and bin
+#of where it should be deposited
+#Input: target bin and mass of the container which is on the servo table
+def load_container(bin_table,mass_bin_table):             
+    target_bin=[]   
+    mass_hopper=[]                      
+    containers=[]
+    # While loop makes sure 3 containers are loaded onto hopper
+    while len(containers) <= 2 :
+        #If there is no container on the servo table, bin_table value is 0
+        #In that case container needs to be dispensed
+        if bin_table == 0:
+            arm.move_arm(0.406,0.0,0.408)
+            time.sleep(1)
+        # Dispensing container and finding out which bin it has to go to and
+        # adding its mass to the list mass_hopper
+            container_properties = dispense_container()
+            target_bin.append(container_properties[2])
+            mass_hopper.append(container_properties[1])
+            time.sleep(1)
+        # If the container dropped is not the same as the container in the hopper then rotate the servo table
+            if target_bin[0] != container_properties[2]:
+                break
+        # If the sum of mass on hopper will be greater than 90 grams,
+        # then break while loop
+            if sum(mass_hopper) >= 90:
+                break
+            time.sleep(1)
+            print(mass)
+        #Q Arm goes to pick up the container from the servo table
+            arm.move_arm(0.629, 0.0, 0.262)
+            time.sleep(1)
+            arm.control_gripper(45)
+            time.sleep(1)      
+            arm.move_arm(0.406,0.0,0.408)
+            time.sleep(1)
+        #Q Arm goes to drop off container on the hopper
+            arm.move_arm(0.0,-0.285,0.53)
+            time.sleep(1)
+            arm.move_arm(0.0, -0.474 , 0.472)
+            time.sleep(1)
+            arm.control_gripper(-45)
+            time.sleep(1)
+        # Q Arm pulls back as to avoid hitting the containers on the hopper
+            arm.move_arm(0.0,-0.236,0.64)
+            time.sleep(1)
+            containers.append("container")
+        else:
+        # Adding target bin and mass of the container on the servo table,
+        # to the list mass_hopper and target_bin
+            target_bin.append(bin_table)
+            mass_hopper.append(mass_bin_table)
+        #Q Arm goes to pick up the container from the servo table
+            arm.move_arm(0.629, 0.0, 0.262)
+            time.sleep(1)
+            arm.control_gripper(45)
+            time.sleep(1)      
+            arm.move_arm(0.406,0.0,0.408)
+            time.sleep(1)
+        #Q Arm goes to drop off container on the hopper
+            arm.move_arm(0.0,-0.285,0.53)
+            time.sleep(1)
+            arm.move_arm(0.0, -0.474 , 0.472)
+            time.sleep(1)
+            arm.control_gripper(-45)
+            time.sleep(1)
+        # Q Arm pulls back as to avoid hitting the containers on the hopper
+            arm.move_arm(0.0,-0.236,0.64)
+            time.sleep(1)
+        # Container list so as to count the number of containers on the hopper
+            containers.append("container")
+        # Make bin_table value equals zero so next container gets dispersed
+            bin_table=0
+            
+            
+    # Return command of which bin to go
+    # If statement so that if there is a container on the servo table or not
+    if len(containers) == 3:
+        containers=[]
+        return target_bin[0]
+    # Return command of which bin to go and the properties of the container
+    # on the servo table
+    else:
+        return [target_bin[0], target_bin[-1], mass_hopper[-1]]
+    
+
+    
+
+
+
+
+
+
+#Deposit function: Moves the Q-bot close to the bin to dump the containers into the bin,
+#Then returns to its original position on the line
+#No inputs , or outputs
+def deposit():
+
+    #line is not being followed, deactivated to prevent "cannot find line" messages
+    bot.deactivate_line_following_sensor()
+
+    #distance from the Q-bot to the bin
+    distance = bot.read_ultrasonic_sensor() - 0.01
+
+
+
+    #rotates the Q-bot to move forward towards bin
+    bot.rotate(90)
+    time.sleep(1)
+
+
+    #realigns the bot
+    bot.rotate(angle())
+    time.sleep(1)
+    
+
+    #walks up to the bin
+    bot.forward_distance(distance)
+    time.sleep(1)
+
+
+    #Rotates so the hopper is perpendicular to bin so that it can dump
+    bot.rotate(-90)
+    time.sleep(1)
+
+
+    bot.rotate(angle())
+    time.sleep(1)
+
+        
+    #Gradual increase in dumping motion
+    bot.activate_linear_actuator()
+    bot.rotate_hopper(45)
+    time.sleep(1)
+    bot.rotate_hopper(75)
+    time.sleep(1)
+    bot.rotate_hopper(90)
+    time.sleep(1)
+    bot.rotate_hopper(-90)
+    bot.deactivate_linear_actuator()
+    time.sleep(1)
+
+    #Rotates back and walks back to its position
+    bot.rotate(-90)
+    time.sleep(1)
+
+    
+    bot.rotate(angle())
+    time.sleep(1)
+
+    
+    bot.forward_distance(distance)
+    time.sleep(1)
+
+
+    #Rotates so that Q-Bot is in line
+    bot.rotate(90)
+    time.sleep(1)
+
+    
+    bot.rotate(angle())
+    time.sleep(1)
+
+    #End of Function
+    return
+
+
+    
+#transfer_container: Determines what bin the Q-bot goes to and stops when it is close enough to it
+#Input: destination, representing the specific bin to go to
+#Output: No Output
+def transfer_container(destination):
+
+    color = [0,0,0]
+
+    #Determines what bin to go to based on the container information
+    #Specific bin distance thresholds
+    if (destination == "Bin01") :
+        color = ([1,0,0],[255,0,0])
+        distance = 0.24
+        
+    elif (destination == "Bin02") :
+        color = ([0,1,0],[0,255,0])
+        distance = 0.2
+        
+    elif (destination == "Bin03") :
+        color = ([0,0,1],[0,0,255])
+        distance = 0.22
+        
+    elif (destination == "Bin04"):
+        color = ([1,0,1],[255,0,255])   
+        distance = 0.2
+        
+    else:
+        
+        print("invalid destination")
+
+
+    #Activate the necessary sensors
+    bot.activate_ultrasonic_sensor()
+    bot.activate_color_sensor()
+    bot.activate_line_following_sensor()
+
+    
+    at_bin = False
+
+    #Runs while the q-bot isn't at the bin
+    while(at_bin != True):
+
+        #Line following function
+        line()
+
+
+        #Conditional breaker: When the Q-bot sees the right color and is close enough to the bin 
+        if ((bot.read_color_sensor() == color) and (bot.read_ultrasonic_sensor() <= distance)):
+
+
+            #Sets while loop condition to false and breaks the loop
+            at_bin = True
+            break
+
+
+
+    #Ensures bot is completely stopped, regardless of line reading
+    bot.stop()
+    time.sleep(2)
+
+    
+    #realigns the bot
+    bot.rotate(angle())
+    time.sleep(2)
+
+
+    #Container dumping function
+    deposit()
+    time.sleep(1)
+
+
+    #End of Function
+    return
+
+
+    
+
+    
+
+
+    
+#return_home: checks the position while travelling, and if it's at the home position, it will stop
+#Inputs: No inputs
+#Outputs:No Outputs
+def return_home():
+    bot.activate_line_following_sensor()
+
+    #home position, note z position not needed since bot is always on the ground
+    home = [1.5,0]
+
+    #initially called to ensure the bot isnt already at home
+    position = bot.position() 
+
+
+    #Runs while the bot position isnt equal to home
+    #Note: y coordinate is more precise as it will adjust for offset
+    #x coordinates are still present to ensure the bot doesnt stop at the reflection of the x axis
+    while (position[1] >= 0.01 or position[1] <= -0.01) or (position[0] <= 1.4 or position[0] >= 1.6):
+
+        #Line following function
+        line()
+        position = bot.position()
+
+
+    
+
+    #ensure bot stops regardless of line readings
+    bot.stop()
+
+    time.sleep(1)
+
+    bot.deactivate_line_following_sensor()
+
+
+    #to the left of the home position
+    if bot.position()[0] < 1.5:
+
+        time.sleep(1)
+        bot.rotate(90)
+        time.sleep(1)
+
+        bot.rotate(angle())
+        time.sleep(1)
+        
+        #position will be less than five, so must subtract position from home position
+        bot.forward_distance(1.5 - bot.position()[0])
+        time.sleep(1)
+
+        bot.rotate(-90)
+
+
+    #to the right of home position
+    elif bot.position()[0] < 1.5:
+
+        time.sleep(1)
+        bot.rotate(-90)
+        time.sleep(1)
+
+        bot.rotate(angle())
+        time.sleep(1)
+
+        #position will be greater than home. so subtract home from position
+        bot.forward_distance(bot.position()[0] - 1.5)
+        time.sleep(1)
+
+        bot.rotate(90)
+
+        
+
+    bot.stop()
+    time.sleep(1)
+
+
+    #Realigns, and bot is ready
+    bot.rotate(angle())
+    time.sleep(2)
+
+
+    #End of Function
+    return
+
+
+ 
+#To call all of the functions and make the system run continuously
+def maint(): 
+    bin_table=[0]
+    mass_bin_table=[0]
+    
+    while(True):
+    # try and except function so as to keep the program from breaking
+    # due to no value in the list 
+        try:
+           print(bin_table)
+           print(mass_bin_table)
+
+    #dispenses container, loads it, then transports it and dumps it
+           table_container_properties=load_container(bin_table[0],mass_bin_table[0])
+           transfer_container(table_container_properties[0])
+           
+           extra_bin=[table_container_properties[1]]
+           mass_bin_table=[table_container_properties[2]]
+           
+        except IndexError:
+            extra_bin=[0]
+            mass_bin_table=[0]
+            continue
+            
+    
+
+    #returns to home
+        return_home()
+
+    return
+
+
+
+
+#---------------------------------------------------------------------------------
+# STUDENT CODE ENDS
+#---------------------------------------------------------------------------------
+    
+
